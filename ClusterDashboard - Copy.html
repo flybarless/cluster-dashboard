@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>ContextCapture Cluster Status</title>
+<style>
+body { font-family: Arial, sans-serif; margin: 20px; }
+h1 { font-size: 24px; }
+#counter { font-size: 48px; margin: 10px 0; color: green; }
+#nextRefresh { font-size: 14px; color: #555; margin-bottom: 20px; }
+
+button {
+    padding: 6px 12px;
+    font-size: 14px;
+    margin-left: 10px;
+    cursor: pointer;
+}
+
+table { border-collapse: collapse; width: 100%; margin-top: 10px; }
+th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+th { background-color: #f2f2f2; }
+
+.ok { color: green; font-weight: bold; }
+.down { color: red; font-weight: bold; }
+
+.badge { padding: 2px 6px; border-radius: 4px; color: #fff; }
+.badge-ok { background-color: green; }
+.badge-down { background-color: red; }
+
+#log { white-space: pre; background: #eee; padding: 10px; margin-top: 20px; display: none; }
+</style>
+</head>
+<body>
+<h1>ENGINE Status</h1>
+<div>
+    Live Engines: <span id="counter">0</span>
+</div>
+<div id="nextRefresh">
+    Next refresh in <span id="countdown">60</span> seconds
+    <button onclick="manualRefresh()">Refresh Now</button>
+</div>
+
+<table>
+<thead>
+<tr><th>Node</th><th>Status</th><th>Last Update</th></tr>
+</thead>
+<tbody id="statusTable">
+<tr><td colspan="3">Loading…</td></tr>
+</tbody>
+</table>
+
+<div id="log"></div>
+
+<script>
+const baseUrl = "./";  // same folder
+let refreshInterval = 60; // seconds
+let countdown = refreshInterval;
+let interval;
+
+async function fetchNodesAndStatus() {
+    const tbody = document.getElementById("statusTable");
+    const counter = document.getElementById("counter");
+    tbody.innerHTML = "";
+
+    let liveCount = 0;
+
+    try {
+        const response = await fetch(baseUrl);
+        const html = await response.text();
+
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, "text/html");
+        const links = Array.from(doc.querySelectorAll("a"));
+        const txtFiles = links
+            .map(a => a.getAttribute("href"))
+            .filter(name => name.endsWith(".txt"));
+
+        if (txtFiles.length === 0) {
+            tbody.innerHTML = "<tr><td colspan='3'>No .txt files found</td></tr>";
+            counter.textContent = "0";
+            return;
+        }
+
+        for (const file of txtFiles) {
+            const node = file.replace(".txt", "");
+            try {
+                const res = await fetch(`${baseUrl}${file}`);
+                const text = await res.text();
+                const [time, state] = text.trim().split(",");
+                const row = document.createElement("tr");
+
+                const nodeCell = document.createElement("td");
+                nodeCell.textContent = node;
+
+                const statusCell = document.createElement("td");
+                const badge = document.createElement("span");
+                badge.textContent = state;
+                badge.className = `badge ${state === "OK" ? "badge-ok" : "badge-down"}`;
+                statusCell.appendChild(badge);
+
+                const timeCell = document.createElement("td");
+                timeCell.textContent = time;
+
+                if (state === "OK") liveCount++;
+
+                row.appendChild(nodeCell);
+                row.appendChild(statusCell);
+                row.appendChild(timeCell);
+                tbody.appendChild(row);
+            } catch {
+                const row = document.createElement("tr");
+                row.innerHTML = `<td>${node}</td><td class="down">Error</td><td>-</td>`;
+                tbody.appendChild(row);
+            }
+        }
+
+        counter.textContent = liveCount;
+
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan='3'>Error: ${e}</td></tr>`;
+        counter.textContent = "0";
+    }
+}
+
+function startCountdown() {
+    const cd = document.getElementById("countdown");
+    clearInterval(interval);
+    countdown = refreshInterval;
+    cd.textContent = countdown;
+
+    interval = setInterval(() => {
+        countdown--;
+        cd.textContent = countdown;
+        if (countdown <= 0) {
+            fetchNodesAndStatus();
+            countdown = refreshInterval;
+        }
+    }, 1000);
+}
+
+function manualRefresh() {
+    fetchNodesAndStatus();
+    countdown = refreshInterval;
+    document.getElementById("countdown").textContent = countdown;
+}
+
+fetchNodesAndStatus();
+startCountdown();
+</script>
+</body>
+</html>
